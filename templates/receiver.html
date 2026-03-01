@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="/static/style.css">
+    <title>P2P - Receiver</title>
+</head>
+<body>
+    <div class="container">
+        <h1>Receive File</h1>
+        <div id="transferInfo">
+            <div id="statusInfo">
+                <p id="statusText">Connecting...</p>
+                <div class="progress-bar-container">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+                <div id="stats">
+                    <div>Progress: <span id="progressPercent">0%</span></div>
+                    <div>Speed: <span id="speed">0 KB/s</span></div>
+                    <div>Received: <span id="receivedSize">0 MB</span></div>
+                    <div>Total: <span id="totalSize">0 MB</span></div>
+                </div>
+            </div>
+            <button id="downloadBtn" class="custom-btn" style="display: none;" onclick="downloadFile()">Download File</button>
+        </div>
+    </div>
+
+    <!-- Pass sessionId to JS -->
+    <script>
+        const SESSION_ID = "{{ session_id }}";
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script src="/static/socket.js"></script>
+    <script src="/static/webrtc.js"></script>
+    <script src="/static/fileHandler.js"></script>
+    <script src="/static/receiver.js"></script>
+</body>
+</html>

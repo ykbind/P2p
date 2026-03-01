@@ -44,6 +44,15 @@ socket.on('receiver_joined', async () => {
     const dc = rtc.createDataChannel('fileTransfer');
     dc.onopen = () => {
         console.log('Data channel open');
+        // Send metadata first
+        dc.send(JSON.stringify({
+            type: 'metadata',
+            content: {
+                name: selectedFile.name,
+                size: selectedFile.size,
+                type: selectedFile.type
+            }
+        }));
         startTransfer();
     };
 
