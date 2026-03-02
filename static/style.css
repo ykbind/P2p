@@ -97,13 +97,25 @@ body {
     transition: width 0.1s;
 }
 
+#sessionInfo {
+    margin-top: 2rem;
+    padding: 1rem;
+    border: 1px solid #3b82f644;
+    border-radius: 8px;
+    background: #1e293b;
+    display: none; /* Controlled by JS */
+}
+
 .session-url {
     background-color: #0f172a;
-    padding: 10px;
-    border-radius: 4px;
+    padding: 12px;
+    border-radius: 6px;
     word-break: break-all;
-    font-family: monospace;
+    font-family: 'Courier New', monospace;
     margin-top: 10px;
+    color: #60a5fa;
+    border: 1px solid #1e293b;
+    user-select: all;
 }
 
 #stats {

@@ -11,36 +11,56 @@ async function onFileSelected() {
     if (!selectedFile) return;
 
     console.log("File selected:", selectedFile.name);
-    // Disable the entire input wrapper
-    const wrapper = document.querySelector('.file-input-wrapper');
-    if (wrapper) wrapper.style.display = 'none';
     
-    document.getElementById('fileInfo').innerText = `Selected: ${selectedFile.name} (${formatSize(selectedFile.size)})`;
+    // UI Feedback: Show file info immediately
+    const fileInfo = document.getElementById('fileInfo');
+    if (fileInfo) {
+        fileInfo.innerText = `Selected: ${selectedFile.name} (${formatSize(selectedFile.size)})`;
+    }
 
     // Emit session creation
-    console.log("Emitting create_session...");
-    socket.emit('create_session', {
-        metadata: {
-            name: selectedFile.name,
-            size: selectedFile.size,
-            type: selectedFile.type
+    try {
+        console.log("Emitting create_session...");
+        // Use a 2-second timeout to check if socket is actually connected
+        if (!socket.connected) {
+            console.error("Socket not connected! Attempting to reconnect...");
+            socket.connect();
         }
-    });
+
+        socket.emit('create_session', {
+            metadata: {
+                name: selectedFile.name,
+                size: selectedFile.size,
+                type: selectedFile.type
+            }
+        });
+    } catch (err) {
+        console.error("Error emitting create_session:", err);
+    }
 }
 
 socket.on('session_created', (data) => {
+    console.log("Session created successfully:", data.session_id);
     sessionId = data.session_id;
-    // Handle Vercel and other dynamic port/domain environments
+    
     const base = window.location.origin;
     const url = `${base}/r/${sessionId}`;
-    const shareLinkElement = document.getElementById('shareLink');
-    if (shareLinkElement) {
-        shareLinkElement.innerText = url;
-        document.getElementById('sessionInfo').style.display = 'block';
+    
+    // Ensure both visibility and content
+    const sessionInfo = document.getElementById('sessionInfo');
+    const shareLink = document.getElementById('shareLink');
+    
+    if (sessionInfo && shareLink) {
+        shareLink.innerText = url;
+        sessionInfo.style.display = 'block';
+        console.log("Share link updated in UI");
+    } else {
+        console.error("UI Elements for session info not found!");
     }
 });
 
 socket.on('receiver_joined', async () => {
+    console.log("Receiver joined room. Starting WebRTC sequence.");
     document.getElementById('statusText').innerText = 'Receiver joined. Creating WebRTC connection...';
     document.getElementById('transferInfo').style.display = 'block';
 

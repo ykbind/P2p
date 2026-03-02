@@ -22,11 +22,17 @@ socket.on('connect_error', (error) => {
 
 function initSocket(sessionId, onSignal, onJoined) {
     socket.on('signal', (data) => {
+        console.log("Signal received:", data.type || "ice-candidate");
         onSignal(data);
     });
 
     socket.on('receiver_joined', () => {
+        console.log("Receiver joined theoretical session");
         if (onJoined) onJoined();
+    });
+
+    socket.on('error', (err) => {
+        console.error("Socket server-side error:", err);
     });
 
     // Heartbeat mechanism
@@ -38,6 +44,25 @@ function initSocket(sessionId, onSignal, onJoined) {
 
     return socket;
 }
+
+// Global listener for session creation (moving it here ensures it's registered immediately)
+socket.on('session_created', (data) => {
+    console.log("Session created successfully:", data.session_id);
+    const base = window.location.origin;
+    const url = `${base}/r/${data.session_id}`;
+    
+    const sessionInfo = document.getElementById('sessionInfo');
+    const shareLink = document.getElementById('shareLink');
+    
+    if (sessionInfo && shareLink) {
+        shareLink.innerText = url;
+        sessionInfo.style.display = 'block';
+        
+        // Hide the input wrapper now that session is active
+        const wrapper = document.querySelector('.file-input-wrapper');
+        if (wrapper) wrapper.style.display = 'none';
+    }
+});
 
 function sendSignal(sessionId, signalData) {
     socket.emit('signal', {
