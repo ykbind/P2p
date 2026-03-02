@@ -19,15 +19,31 @@ body {
 
 .container {
     background-color: var(--card-bg);
-    padding: 2.5rem;
+    padding: 2rem;
     border-radius: 12px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-    width: 400px;
+    width: 100%;
+    max-width: 450px;
+    box-sizing: border-box;
     text-align: center;
+    margin: 1rem;
+}
+
+.file-input-wrapper {
+    position: relative;
+    overflow: hidden;
+    display: inline-block;
+    width: 100%;
+    margin-bottom: 1rem;
 }
 
 .file-input {
-    display: none;
+    font-size: 100px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    opacity: 0;
+    cursor: pointer;
 }
 
 .custom-btn {
@@ -40,6 +56,11 @@ body {
     font-weight: 600;
     transition: background-color 0.2s;
     width: 100%;
+    box-sizing: border-box;
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .custom-btn:hover {

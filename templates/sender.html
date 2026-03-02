@@ -7,7 +7,10 @@
 <body>
     <div class="container">
         <h1>Send File</h1>
-        <input type="file" id="fileInput" class="custom-btn" onchange="onFileSelected()">
+        <div class="file-input-wrapper">
+            <label class="custom-btn" for="fileInput">Choose File</label>
+            <input type="file" id="fileInput" class="file-input" onchange="onFileSelected()">
+        </div>
         <p id="fileInfo"></p>
         
         <div id="sessionInfo" style="display: none;">
