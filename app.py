@@ -7,7 +7,16 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = secrets.token_hex(16)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+# Explicitly allowing common SocketIO options to avoid 400 errors
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='eventlet', 
+    logger=True, 
+    engineio_logger=True,
+    ping_timeout=10,
+    ping_interval=5
+)
 
 # In-memory session storage
 # sessions = {
@@ -66,6 +75,7 @@ def receiver(session_id):
 
 @socketio.on('create_session')
 def handle_create_session(data):
+    print(f"Creating session for: {request.sid}")
     session_id = secrets.token_urlsafe(32)
     sessions[session_id] = {
         "sender": request.sid,
@@ -77,6 +87,7 @@ def handle_create_session(data):
         "last_chunk_index": 0
     }
     join_room(session_id)
+    print(f"Session created: {session_id}")
     emit('session_created', {'session_id': session_id})
 
 @socketio.on('join_session')

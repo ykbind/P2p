@@ -10,10 +10,15 @@ async function onFileSelected() {
     selectedFile = input.files[0];
     if (!selectedFile) return;
 
-    input.disabled = true;
-    document.getElementById('fileInfo').innerText = `${selectedFile.name} (${formatSize(selectedFile.size)})`;
+    console.log("File selected:", selectedFile.name);
+    // Disable the entire input wrapper
+    const wrapper = document.querySelector('.file-input-wrapper');
+    if (wrapper) wrapper.style.display = 'none';
+    
+    document.getElementById('fileInfo').innerText = `Selected: ${selectedFile.name} (${formatSize(selectedFile.size)})`;
 
-    // 1. Notify server about new session
+    // Emit session creation
+    console.log("Emitting create_session...");
     socket.emit('create_session', {
         metadata: {
             name: selectedFile.name,
