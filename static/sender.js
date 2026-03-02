@@ -25,9 +25,14 @@ async function onFileSelected() {
 
 socket.on('session_created', (data) => {
     sessionId = data.session_id;
-    const url = `${window.location.origin}/r/${sessionId}`;
-    document.getElementById('shareLink').innerText = url;
-    document.getElementById('sessionInfo').style.display = 'block';
+    // Handle Vercel and other dynamic port/domain environments
+    const base = window.location.origin;
+    const url = `${base}/r/${sessionId}`;
+    const shareLinkElement = document.getElementById('shareLink');
+    if (shareLinkElement) {
+        shareLinkElement.innerText = url;
+        document.getElementById('sessionInfo').style.display = 'block';
+    }
 });
 
 socket.on('receiver_joined', async () => {
