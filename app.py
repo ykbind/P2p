@@ -14,8 +14,10 @@ socketio = SocketIO(
     async_mode='eventlet', 
     logger=True, 
     engineio_logger=True,
-    ping_timeout=10,
-    ping_interval=5
+    ping_timeout=60,
+    ping_interval=25,
+    allow_upgrades=True,
+    cookie=False
 )
 
 # In-memory session storage
