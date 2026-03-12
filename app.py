@@ -139,4 +139,7 @@ def handle_disconnect():
             break
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    # Use environment port for Render/Cloud deployment
+    port = int(os.environ.get('PORT', 5000))
+    # Render requires gunicorn/eventlet to handle websockets properly
+    socketio.run(app, debug=False, host='0.0.0.0', port=port)
