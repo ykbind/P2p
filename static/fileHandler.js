@@ -25,13 +25,29 @@ class FileHandler {
         this.startTime = Date.now();
     }
 
-    getStats(bytesTransferred) {
+    getStats(bytesTransferred, totalSize) {
         const now = Date.now();
         const duration = (now - this.startTime) / 1000;
         const speed = duration > 0 ? bytesTransferred / duration : 0;
+        
+        // Calculate ETA
+        const remainingBytes = totalSize - bytesTransferred;
+        let eta = "Calculating...";
+        if (speed > 0) {
+            const remainingSeconds = Math.ceil(remainingBytes / speed);
+            if (remainingSeconds < 60) {
+                eta = `${remainingSeconds}s`;
+            } else {
+                const mins = Math.floor(remainingSeconds / 60);
+                const secs = remainingSeconds % 60;
+                eta = `${mins}m ${secs}s`;
+            }
+        }
+
         return {
             speed: formatSize(speed) + '/s',
-            duration: Math.round(duration) + 's'
+            duration: Math.round(duration) + 's',
+            eta: eta
         };
     }
 }

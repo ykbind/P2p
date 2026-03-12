@@ -52,12 +52,13 @@ function handleData(data) {
 function updateUI() {
     if (!fileMetadata) return;
     const progress = Math.min((receivedSize / fileMetadata.size) * 100, 100);
-    const stats = fileHandler.getStats(receivedSize);
+    const stats = fileHandler.getStats(receivedSize, fileMetadata.size);
 
     document.getElementById('progressBar').style.width = `${progress}%`;
     document.getElementById('progressPercent').innerText = `${Math.round(progress)}%`;
     document.getElementById('speed').innerText = stats.speed;
     document.getElementById('receivedSize').innerText = formatSize(receivedSize);
+    document.getElementById('timeLeft').innerText = stats.eta;
 }
 
 function onTransferComplete() {

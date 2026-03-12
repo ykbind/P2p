@@ -7,15 +7,25 @@
 <body>
     <div class="container">
         <h1>Send File</h1>
-        <div class="file-input-wrapper">
-            <label class="custom-btn" for="fileInput">Choose File</label>
-            <input type="file" id="fileInput" class="file-input" onchange="onFileSelected()">
+        <div id="dropZone" class="drop-zone">
+            <p>Drag & Drop your file here</p>
+            <p>or</p>
+            <div class="file-input-wrapper">
+                <label class="custom-btn" for="fileInput">Choose File</label>
+                <input type="file" id="fileInput" class="file-input" onchange="onFileSelected(this.files[0])">
+            </div>
         </div>
+        <p class="formal-note">Note: This application currently supports transferring only one file at a time per session.</p>
         <p id="fileInfo"></p>
         
         <div id="sessionInfo" style="display: none;">
             <p class="status-label">Share link with receiver:</p>
             <div id="shareLink" class="session-url"></div>
+            <div class="session-actions">
+                <button class="custom-btn secondary" onclick="copyToClipboard()">Copy Link</button>
+                <button class="custom-btn secondary" onclick="toggleQR()">Toggle QR Code</button>
+            </div>
+            <div id="qrcode" class="qr-container"></div>
         </div>
 
         <div id="transferInfo" style="display: none;">
@@ -29,12 +39,14 @@
                     <div>Speed: <span id="speed">0 KB/s</span></div>
                     <div>Sent: <span id="sentSize">0 MB</span></div>
                     <div>Total: <span id="totalSize">0 MB</span></div>
+                    <div>Time Left: <span id="timeLeft">Calculating...</span></div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <script src="/static/socket.js"></script>
     <script src="/static/webrtc.js"></script>
