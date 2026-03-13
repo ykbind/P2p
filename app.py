@@ -12,7 +12,7 @@ sessions = {}
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("sender.html")
 
 @app.route("/send")
 def send():
