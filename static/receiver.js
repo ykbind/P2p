@@ -1,94 +1,70 @@
+let sessionId = null;
 let rtc = null;
-let receivedChunks = [];
-let receivedSize = 0;
-let fileMetadata = null;
-let currentChunkIndex = 0;
 const fileHandler = new FileHandler();
 
-// Initialize session
-console.log("Receiver: Joining session", SESSION_ID);
-socket.emit('join_session', { session_id: SESSION_ID });
-
-socket.on('receiver_joined', () => {
-    console.log("Receiver: Peer (Sender) is in the session.");
+socket.on("connect", () => {
+    console.log("Connected to SocketIO server as receiver.");
+    sessionId = window.location.pathname.split("/").pop();
+    console.log("Extracted sessionId:", sessionId);
+    if (sessionId) {
+        socket.emit("join_session", { sessionId });
+    }
 });
 
-socket.on('signal', async (data) => {
-    console.log("Receiver: Signal received", data.offer ? "Offer" : "Other");
+socket.on("session_info", (data) => {
+    console.log("Session metadata received:", data.metadata);
+    document.getElementById("statusText").innerText = "Connected to sender. Starting transfer...";
+    document.getElementById("transferInfo").style.display = "block";
+    document.getElementById("totalSize").innerText = formatSize(data.metadata.size);
+    
+    rtc = new WebRTCManager(
+        sessionId,
+        (candidate) => sendSignal(sessionId, { candidate }),
+        (dc) => handleDataChannel(dc)
+    );
+});
+
+socket.on("signal", async (data) => {
+    console.log("Signal received from sender:", Object.keys(data));
     if (data.offer) {
-        rtc = new WebRTCManager(
-            SESSION_ID,
-            (candidate) => sendSignal(SESSION_ID, { candidate }),
-            (dc) => {}, // dc setup in WebRTCManager
-            (data) => handleData(data)
-        );
-        const answer = await rtc.setOffer(data.offer);
-        console.log("Receiver: Sending answer");
-        sendSignal(SESSION_ID, { answer });
-
-        // Resume request logic
-        if (currentChunkIndex > 0) {
-            rtc.dc.send(JSON.stringify({ type: 'resume', content: currentChunkIndex }));
-        }
-    } else if (data.candidate) {
-        if (rtc) {
-            console.log("Receiver: Adding ICE candidate");
-            await rtc.addCandidate(data.candidate);
-        }
+        const answer = await rtc.createAnswer(data.offer);
+        sendSignal(sessionId, { answer });
     }
+    if (data.candidate) await rtc.addCandidate(data.candidate);
 });
 
-function handleData(data) {
-    if (typeof data === 'string') {
-        const msg = JSON.parse(data);
-        if (msg.type === 'metadata') {
-            fileMetadata = msg.content;
-            document.getElementById('totalSize').innerText = formatSize(fileMetadata.size);
-            document.getElementById('statusText').innerText = 'Receiving...';
-            fileHandler.startTimer();
-        } else if (msg.type === 'done') {
-            onTransferComplete();
+function handleDataChannel(dc) {
+    dc.onopen = () => console.log("Receiver data channel open!");
+    dc.onmessage = (e) => {
+        if (typeof e.data === "string") {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.type === "metadata") {
+                    console.log("Metadata received via WebRTC:", msg.content);
+                    fileHandler.init(msg.content.name, msg.content.size, msg.content.type);
+                    fileHandler.startTimer();
+                } else if (msg.type === "done") {
+                    console.log("Transfer complete from sender signal.");
+                    fileHandler.save(sessionId);
+                    document.getElementById("statusText").innerText = "Transfer complete!";
+                }
+            } catch (err) {
+                console.error("Error parsing control message:", err);
+            }
+        } else {
+            fileHandler.addChunk(e.data);
+            updateUI();
         }
-        return;
-    }
-
-    // Binary chunk received
-    receivedChunks.push(new Uint8Array(data));
-    receivedSize += data.byteLength;
-    currentChunkIndex++;
-    updateUI();
+    };
 }
 
 function updateUI() {
-    if (!fileMetadata) return;
-    const progress = Math.min((receivedSize / fileMetadata.size) * 100, 100);
-    const stats = fileHandler.getStats(receivedSize, fileMetadata.size);
-
-    document.getElementById('progressBar').style.width = `${progress}%`;
-    document.getElementById('progressPercent').innerText = `${Math.round(progress)}%`;
-    document.getElementById('speed').innerText = stats.speed;
-    document.getElementById('receivedSize').innerText = formatSize(receivedSize);
-    document.getElementById('timeLeft').innerText = stats.eta;
+    const received = fileHandler.receivedSize;
+    const progress = Math.min((received / fileHandler.totalSize) * 100, 100);
+    const stats = fileHandler.getStats(received, fileHandler.totalSize);
+    document.getElementById("progressBar").style.width = `${progress}%`;
+    document.getElementById("progressPercent").innerText = `${Math.round(progress)}%`;
+    document.getElementById("speed").innerText = stats.speed;
+    document.getElementById("receivedSize").innerText = formatSize(received);
+    document.getElementById("timeLeft").innerText = stats.eta;
 }
-
-function onTransferComplete() {
-    document.getElementById('statusText').innerText = 'Transfer complete!';
-    document.getElementById('downloadBtn').style.display = 'block';
-    updateStatus(SESSION_ID, 'completed');
-}
-
-function downloadFile() {
-    const blob = new Blob(receivedChunks, { type: fileMetadata.type });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileMetadata.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-socket.on('peer_disconnected', () => {
-    document.getElementById('statusText').innerText = 'Sender disconnected. Reconnecting...';
-});

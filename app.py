@@ -1,148 +1,72 @@
 import os
-import time
 import secrets
-import threading
 from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = secrets.token_hex(16)
-# Explicitly allowing common SocketIO options to avoid 400 errors
-socketio = SocketIO(
-    app, 
-    cors_allowed_origins="*", 
-    async_mode='eventlet', 
-    logger=True, 
-    engineio_logger=True,
-    ping_timeout=60,
-    ping_interval=25,
-    allow_upgrades=True,
-    cookie=False
-)
+# Allow all origins for Vercel/Render compatibility
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True, ping_timeout=60, ping_interval=25)
 
-# In-memory session storage
-# sessions = {
-#     session_id: {
-#         "sender": socket_id,
-#         "receiver": socket_id,
-#         "created_at": timestamp,
-#         "last_activity": timestamp,
-#         "status": "waiting" | "transferring" | "completed" | "disconnected",
-#         "file_metadata": {},
-#         "last_chunk_index": 0
-#     }
-# }
 sessions = {}
 
-def cleanup_sessions():
-    """Background thread to clean up expired or disconnected sessions."""
-    while True:
-        now = time.time()
-        expired_sessions = []
-        
-        for session_id, data in sessions.items():
-            # 1. Destroy if completed
-            if data['status'] == 'completed':
-                expired_sessions.append(session_id)
-                continue
-            
-            # 2. Destroy if disconnected for more than 60 seconds
-            if data['status'] == 'disconnected' and (now - data['last_activity'] > 60):
-                expired_sessions.append(session_id)
-                continue
-                
-            # 3. Expire after 10 minutes (600s) if NOT transferring
-            if data['status'] != 'transferring' and (now - data['last_activity'] > 600):
-                expired_sessions.append(session_id)
-                
-        for sid in expired_sessions:
-            print(f"Cleaning up session: {sid}")
-            sessions.pop(sid, None)
-            
-        time.sleep(60)
-
-# Start cleanup thread
-cleanup_thread = threading.Thread(target=cleanup_sessions, daemon=True)
-cleanup_thread.start()
-
-@app.route('/')
+@app.route("/")
 def index():
-    return render_template('sender.html')
+    return render_template("index.html")
 
-@app.route('/r/<session_id>')
-def receiver(session_id):
+@app.route("/send")
+def send():
+    return render_template("send.html")
+
+@app.route("/receive/<session_id>")
+def receive(session_id):
     if session_id not in sessions:
-        return "Session not found or expired", 404
-    return render_template('receiver.html', session_id=session_id)
+        return "Session not found", 404
+    return render_template("receive.html", session_id=session_id)
 
-@socketio.on('create_session')
-def handle_create_session(data):
-    print(f"Creating session for: {request.sid}")
-    session_id = secrets.token_urlsafe(32)
+@socketio.on("create_session")
+def on_create_session(data):
+    session_id = secrets.token_urlsafe(8)
     sessions[session_id] = {
+        "metadata": data.get("metadata"),
         "sender": request.sid,
         "receiver": None,
-        "created_at": time.time(),
-        "last_activity": time.time(),
-        "status": "waiting",
-        "file_metadata": data.get('metadata', {}),
-        "last_chunk_index": 0
+        "status": "waiting"
     }
     join_room(session_id)
-    print(f"Session created: {session_id}")
-    emit('session_created', {'session_id': session_id})
+    print(f"Session created: {session_id} by {request.sid}")
+    emit("session_created", {"sessionId": session_id, "metadata": data.get("metadata")})
 
-@socketio.on('join_session')
-def handle_join_session(data):
-    session_id = data.get('session_id')
-    print(f"Join attempt for session: {session_id}")
+@socketio.on("join_session")
+def on_join_session(data):
+    session_id = data.get("sessionId")
     if session_id in sessions:
-        sessions[session_id]['receiver'] = request.sid
-        sessions[session_id]['last_activity'] = time.time()
-        sessions[session_id]['status'] = 'waiting'
+        sessions[session_id]["receiver"] = request.sid
+        sessions[session_id]["status"] = "connecting"
         join_room(session_id)
-        print(f"Receiver {request.sid} joined session {session_id}")
-        # Notify sender specifically in that room
-        emit('receiver_joined', room=session_id, include_self=False)
+        print(f"Receiver {request.sid} joined session: {session_id}")
+        # Broadcast to room that receiver joined
+        emit("receiver_joined", room=session_id, include_self=False)
+        emit("session_info", {"metadata": sessions[session_id]["metadata"]})
     else:
-        print(f"Session not found: {session_id}")
-        emit('error', {'message': 'Session expired or invalid'})
+        emit("error", {"message": "Session not found"})
 
-@socketio.on('signal')
-def handle_signal(data):
-    session_id = data.get('session_id')
+@socketio.on("signal")
+def on_signal(data):
+    session_id = data.get("sessionId")
+    signal_data = data.get("signal")
+    print(f"Signal received in room {session_id}")
+    # Forward the signal to everyone in the room except the sender
+    emit("signal", signal_data, room=session_id, include_self=False)
+
+@socketio.on("update_status")
+def on_update_status(data):
+    session_id = data.get("sessionId")
+    status = data.get("status")
     if session_id in sessions:
-        # Forward signaling messages (offer, answer, ice-candidates) to the room
-        # excluding the sender of the signal
-        emit('signal', data, room=session_id, include_self=False)
+        sessions[session_id]["status"] = status
+        emit("status_updated", {"status": status}, room=session_id)
 
-@socketio.on('heartbeat')
-def handle_heartbeat(session_id):
-    if session_id in sessions:
-        sessions[session_id]['last_activity'] = time.time()
-
-@socketio.on('status_update')
-def handle_status_update(data):
-    session_id = data.get('session_id')
-    status = data.get('status')
-    if session_id in sessions:
-        sessions[session_id]['status'] = status
-        sessions[session_id]['last_activity'] = time.time()
-        if status == 'completed':
-            # Will be cleaned up by background thread or immediately
-            pass
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    for session_id, data in sessions.items():
-        if request.sid == data.get('sender') or request.sid == data.get('receiver'):
-            data['status'] = 'disconnected'
-            data['last_activity'] = time.time()
-            emit('peer_disconnected', room=session_id)
-            break
-
-if __name__ == '__main__':
-    # Use environment port for Render/Cloud deployment
-    port = int(os.environ.get('PORT', 5000))
-    # Render requires gunicorn/eventlet to handle websockets properly
-    socketio.run(app, debug=False, host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=True)
