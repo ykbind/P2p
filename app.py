@@ -16,13 +16,13 @@ def index():
 
 @app.route("/send")
 def send():
-    return render_template("send.html")
+    return render_template("sender.html")
 
 @app.route("/receive/<session_id>")
 def receive(session_id):
     if session_id not in sessions:
         return "Session not found", 404
-    return render_template("receive.html", session_id=session_id)
+    return render_template("receiver.html", session_id=session_id)
 
 @socketio.on("create_session")
 def on_create_session(data):
