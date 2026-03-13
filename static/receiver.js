@@ -6,9 +6,15 @@ let currentChunkIndex = 0;
 const fileHandler = new FileHandler();
 
 // Initialize session
+console.log("Receiver: Joining session", SESSION_ID);
 socket.emit('join_session', { session_id: SESSION_ID });
 
+socket.on('receiver_joined', () => {
+    console.log("Receiver: Peer (Sender) is in the session.");
+});
+
 socket.on('signal', async (data) => {
+    console.log("Receiver: Signal received", data.offer ? "Offer" : "Other");
     if (data.offer) {
         rtc = new WebRTCManager(
             SESSION_ID,
@@ -17,6 +23,7 @@ socket.on('signal', async (data) => {
             (data) => handleData(data)
         );
         const answer = await rtc.setOffer(data.offer);
+        console.log("Receiver: Sending answer");
         sendSignal(SESSION_ID, { answer });
 
         // Resume request logic
@@ -24,7 +31,10 @@ socket.on('signal', async (data) => {
             rtc.dc.send(JSON.stringify({ type: 'resume', content: currentChunkIndex }));
         }
     } else if (data.candidate) {
-        if (rtc) await rtc.addCandidate(data.candidate);
+        if (rtc) {
+            console.log("Receiver: Adding ICE candidate");
+            await rtc.addCandidate(data.candidate);
+        }
     }
 });
 

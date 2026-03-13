@@ -95,23 +95,26 @@ def handle_create_session(data):
 @socketio.on('join_session')
 def handle_join_session(data):
     session_id = data.get('session_id')
+    print(f"Join attempt for session: {session_id}")
     if session_id in sessions:
         sessions[session_id]['receiver'] = request.sid
         sessions[session_id]['last_activity'] = time.time()
+        sessions[session_id]['status'] = 'waiting'
         join_room(session_id)
-        # Notify sender that receiver joined
-        emit('receiver_joined', room=sessions[session_id]['sender'])
+        print(f"Receiver {request.sid} joined session {session_id}")
+        # Notify sender specifically in that room
+        emit('receiver_joined', room=session_id, include_self=False)
     else:
+        print(f"Session not found: {session_id}")
         emit('error', {'message': 'Session expired or invalid'})
 
 @socketio.on('signal')
 def handle_signal(data):
     session_id = data.get('session_id')
     if session_id in sessions:
-        # Forward signaling messages (offer, answer, ice-candidates) to the other peer
-        recipient = sessions[session_id]['receiver'] if request.sid == sessions[session_id]['sender'] else sessions[session_id]['sender']
-        if recipient:
-            emit('signal', data, room=recipient)
+        # Forward signaling messages (offer, answer, ice-candidates) to the room
+        # excluding the sender of the signal
+        emit('signal', data, room=session_id, include_self=False)
 
 @socketio.on('heartbeat')
 def handle_heartbeat(session_id):
