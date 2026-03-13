@@ -6,6 +6,14 @@ let currentChunkIndex = 0;
 let fileWorker = null;
 const fileHandler = new FileHandler();
 
+function formatSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
 // Initialize Drag & Drop
 const dropZone = document.getElementById("dropZone");
 if (dropZone) {
@@ -43,20 +51,20 @@ async function onFileSelected(file) {
 
 // Global Handlers
 socket.on("receiver_joined", async () => {
-    console.log("Receiver joined room. Starting WebRTC sequence.");
-    document.getElementById("statusText").innerText = "Receiver joined. Creating WebRTC connection...";
+    console.log("Receiver joined. Starting sequence.");
+    document.getElementById("statusText").innerText = "Receiver joined. Connecting...";
     document.getElementById("transferInfo").style.display = "block";
 
     rtc = new WebRTCManager(
         sessionId,
-        (candidate) => sendSignal(sessionId, { candidate }),
+        (candidate) => sendSignal(sessionId, candidate),
         (dc) => {}, 
         (data) => handleControlMessage(data)
     );
 
     const dc = rtc.createDataChannel("fileTransfer");
     dc.onopen = () => {
-        console.log("Data channel open");
+        console.log("Channel open");
         dc.send(JSON.stringify({
             type: "metadata",
             content: { name: selectedFile.name, size: selectedFile.size, type: selectedFile.type }
@@ -110,33 +118,42 @@ async function startTransfer() {
 
 function handleWorkerChunk(data) {
     if (!isTransferring) return;
-    rtc.dc.send(data.chunk);
-    currentChunkIndex = data.index;
-    updateUI();
+    if (rtc.dc && rtc.dc.readyState === "open") {
+        rtc.dc.send(data.chunk);
+        currentChunkIndex = data.index;
+        updateUI();
 
-    if (rtc.dc.bufferedAmount > 8 * 1024 * 1024) {
-        setTimeout(() => fileWorker.postMessage({ type: "RESUME" }), 50);
-    } else {
-        fileWorker.postMessage({ type: "RESUME" });
+        if (rtc.dc.bufferedAmount > 8 * 1024 * 1024) {
+            setTimeout(() => fileWorker.postMessage({ type: "RESUME" }), 50);
+        } else {
+            fileWorker.postMessage({ type: "RESUME" });
+        }
     }
 }
 
 function handleTransferComplete() {
-    rtc.dc.send(JSON.stringify({ type: "done" }));
+    if (rtc.dc) rtc.dc.send(JSON.stringify({ type: "done" }));
     isTransferring = false;
     updateStatus(sessionId, "completed");
     document.getElementById("statusText").innerText = "Transfer complete!";
 }
 
 function updateUI() {
-    const sent = currentChunkIndex * 64 * 1024;
-    const progress = Math.min((sent / selectedFile.size) * 100, 100);
-    const stats = fileHandler.getStats(sent, selectedFile.size);
-    document.getElementById("progressBar").style.width = `${progress}%`;
-    document.getElementById("progressPercent").innerText = `${Math.round(progress)}%`;
-    document.getElementById("speed").innerText = stats.speed;
-    document.getElementById("sentSize").innerText = formatSize(sent);
-    document.getElementById("timeLeft").innerText = stats.eta;
+    const sentSize = currentChunkIndex * 64 * 1024;
+    const progress = Math.min((sentSize / selectedFile.size) * 100, 100);
+    const stats = fileHandler.getStats(sentSize, selectedFile.size);
+    
+    const progressEl = document.getElementById("progressBar");
+    const percentEl = document.getElementById("progressPercent");
+    const speedEl = document.getElementById("speed");
+    const sentEl = document.getElementById("sentSize");
+    const etaEl = document.getElementById("timeLeft");
+
+    if (progressEl) progressEl.style.width = `${progress}%`;
+    if (percentEl) percentEl.innerText = `${Math.round(progress)}%`;
+    if (speedEl) speedEl.innerText = stats.speed;
+    if (sentEl) sentEl.innerText = formatSize(sentSize);
+    if (etaEl) etaEl.innerText = stats.eta;
 }
 
 async function copyToClipboard() {

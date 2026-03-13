@@ -6,7 +6,7 @@ class WebRTCManager {
         this.sessionId = sessionId;
         this.onCandidate = onCandidate;
         this.onDataChannel = onDataChannel;
-        this.onData = onData;
+        this.onData = onData; // Note: This is now only used for the DataChannel setup
         
         this.config = {
             iceServers: [
@@ -15,7 +15,6 @@ class WebRTCManager {
                 { urls: 'stun:stun2.l.google.com:19302' },
                 { urls: 'stun:stun3.l.google.com:19302' },
                 { urls: 'stun:stun4.l.google.com:19302' },
-                // OpenRelay Project Free TURN/STUN servers
                 {
                     urls: 'turn:openrelay.metered.ca:80',
                     username: 'openrelayproject',
@@ -46,9 +45,10 @@ class WebRTCManager {
         };
 
         this.pc.ondatachannel = (event) => {
+            console.log("Remote DataChannel received");
             this.dc = event.channel;
             this.setupDataChannel();
-            this.onDataChannel(this.dc);
+            if (this.onDataChannel) this.onDataChannel(this.dc);
         };
     }
 
@@ -61,7 +61,7 @@ class WebRTCManager {
     setupDataChannel() {
         this.dc.binaryType = 'arraybuffer';
         this.dc.onmessage = (event) => {
-            this.onData(event.data);
+            if (this.onData) this.onData(event.data);
         };
     }
 
@@ -71,7 +71,7 @@ class WebRTCManager {
         return offer;
     }
 
-    async setOffer(offer) {
+    async createAnswer(offer) {
         await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);

@@ -9,7 +9,6 @@ const socket = io({
 
 socket.on("connect", () => {
     console.log("Socket connected successfully with ID:", socket.id);
-    console.log("Transport in use:", socket.io.engine.transport.name);
 });
 
 socket.on("disconnect", (reason) => {
@@ -20,23 +19,23 @@ socket.on("connect_error", (error) => {
     console.error("Socket connection error:", error);
 });
 
-socket.io.engine.on("upgrade", () => {
-    console.log("Transport upgraded to:", socket.io.engine.transport.name);
-});
-
 function initSocket(sessionId, onSignal, onJoined) {
     socket.on("signal", (data) => {
-        console.log("Signal received:", data.type || "ice-candidate");
-        onSignal(data);
+        if (onSignal) onSignal(data);
     });
 
     socket.on("receiver_joined", () => {
-        console.log("Receiver joined theoretical session");
+        console.log("Receiver joined.");
         if (onJoined) onJoined();
     });
 
+    socket.on("status_updated", (data) => {
+        const statusText = document.getElementById("statusText");
+        if (statusText) statusText.innerText = `Status: ${data.status}`;
+    });
+
     socket.on("error", (err) => {
-        console.error("Socket server-side error:", err);
+        console.error("Socket error:", err);
     });
 
     setInterval(() => {
@@ -49,14 +48,15 @@ function initSocket(sessionId, onSignal, onJoined) {
 }
 
 socket.on("session_created", (data) => {
-    console.log("Session created successfully:", data.session_id);
+    console.log("Session created:", data.sessionId);
+    sessionId = data.sessionId; 
     const base = window.location.origin;
-    const url = `${base}/r/${data.session_id}`;
+    const url = `${base}/receive/${data.sessionId}`;
     
-    const sessionInfo = document.getElementById("sessionInfo");
     const shareLink = document.getElementById("shareLink");
+    const sessionInfo = document.getElementById("sessionInfo");
     
-    if (sessionInfo && shareLink) {
+    if (shareLink && sessionInfo) {
         shareLink.innerText = url;
         sessionInfo.style.display = "block";
         const wrapper = document.querySelector(".file-input-wrapper");
@@ -66,14 +66,14 @@ socket.on("session_created", (data) => {
 
 function sendSignal(sessionId, signalData) {
     socket.emit("signal", {
-        session_id: sessionId,
-        ...signalData
+        sessionId: sessionId,
+        signal: signalData
     });
 }
 
 function updateStatus(sessionId, status) {
-    socket.emit("status_update", {
-        session_id: sessionId,
+    socket.emit("update_status", {
+        sessionId: sessionId,
         status: status
     });
 }
