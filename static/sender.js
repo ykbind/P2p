@@ -1,176 +1,110 @@
-let sessionId = null;
-let selectedFile = null;
-let rtc = null;
-let isTransferring = false;
-let currentChunkIndex = 0;
-let fileWorker = null;
-const fileHandler = new FileHandler();
+const socket = io({ 
+    transports: ["polling", "websocket"], 
+    path: "/socket.io" 
+});
 
-function formatSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+let sid = null;
+let file = null;
+let p2p = null;
+let startTime = 0;
 
-// Initialize Drag & Drop
-const dropZone = document.getElementById("dropZone");
-if (dropZone) {
-    ["dragenter", "dragover", "dragleave", "drop"].forEach(eventName => {
-        dropZone.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
-    });
+socket.on("session_created", (newSid) => {
+    sid = newSid;
+    const url = `${window.location.origin}/receive/${sid}`;
+    document.getElementById("shareLink").innerText = url;
+    document.getElementById("sessionInfo").style.display = "block";
+    document.getElementById("dropZone").style.display = "none";
+});
 
-    ["dragenter", "dragover"].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => dropZone.classList.add("active"), false);
-    });
-
-    ["dragleave", "drop"].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => dropZone.classList.remove("active"), false);
-    });
-
-    dropZone.addEventListener("drop", e => {
-        onFileSelected(e.dataTransfer.files[0]);
-    }, false);
-}
-
-async function onFileSelected(file) {
-    if (!file) return;
-    selectedFile = file;
-    console.log("File selected:", selectedFile.name);
-    
-    const fileInfo = document.getElementById("fileInfo");
-    if (fileInfo) fileInfo.innerText = `Selected: ${selectedFile.name} (${formatSize(selectedFile.size)})`;
-    if (dropZone) dropZone.style.display = "none";
-
-    console.log("Emitting create_session...");
-    socket.emit("create_session", {
-        metadata: { name: selectedFile.name, size: selectedFile.size, type: selectedFile.type }
-    });
-}
-
-// Global Handlers
 socket.on("receiver_joined", async () => {
-    console.log("Receiver joined. Starting sequence.");
-    document.getElementById("statusText").innerText = "Receiver joined. Connecting...";
-    document.getElementById("transferInfo").style.display = "block";
+    console.log("Peer joined. Starting P2P handshake.");
+    document.getElementById("statusText").innerHTML = '<span class="pulse" style="background:var(--secondary)"></span>Authenticating peer...';
 
-    rtc = new WebRTCManager(
-        sessionId,
-        (candidate) => sendSignal(sessionId, candidate),
-        (dc) => {}, 
-        (data) => handleControlMessage(data)
-    );
-
-    const dc = rtc.createDataChannel("fileTransfer");
-    dc.onopen = () => {
-        console.log("Channel open");
-        dc.send(JSON.stringify({
-            type: "metadata",
-            content: { name: selectedFile.name, size: selectedFile.size, type: selectedFile.type }
-        }));
-        startTransfer();
-    };
-
-    const offer = await rtc.createOffer();
-    sendSignal(sessionId, { offer });
-});
-
-socket.on("signal", async (data) => {
-    if (data.answer) await rtc.setAnswer(data.answer);
-    if (data.candidate) await rtc.addCandidate(data.candidate);
-});
-
-function initWorker() {
-    fileWorker = new Worker("/static/fileWorker.js");
-    fileWorker.onmessage = (e) => {
-        const { type, data } = e.data;
-        if (type === "CHUNK_READY") handleWorkerChunk(data);
-        else if (type === "COMPLETE") handleTransferComplete();
-    };
-}
-
-function handleControlMessage(data) {
-    if (typeof data === "string") {
-        const msg = JSON.parse(data);
-        if (msg.type === "resume") {
-            currentChunkIndex = msg.content;
-            startTransfer();
-        }
-    }
-}
-
-async function startTransfer() {
-    if (isTransferring) return;
-    isTransferring = true;
-    updateStatus(sessionId, "transferring");
-    fileHandler.startTimer();
-    if (!fileWorker) initWorker();
-    
-    document.getElementById("statusText").innerText = "Transferring...";
-    document.getElementById("totalSize").innerText = formatSize(selectedFile.size);
-
-    fileWorker.postMessage({
-        type: "START_TRANSFER",
-        data: { file: selectedFile, resumeFrom: currentChunkIndex }
+    socket.emit("signal", { 
+        sid, 
+        signal: { 
+            metadata: { 
+                name: file.name, 
+                size: file.size, 
+                type: file.type 
+            } 
+        } 
     });
-}
-
-function handleWorkerChunk(data) {
-    if (!isTransferring) return;
-    if (rtc.dc && rtc.dc.readyState === "open") {
-        rtc.dc.send(data.chunk);
-        currentChunkIndex = data.index;
-        updateUI();
-
-        if (rtc.dc.bufferedAmount > 8 * 1024 * 1024) {
-            setTimeout(() => fileWorker.postMessage({ type: "RESUME" }), 50);
-        } else {
-            fileWorker.postMessage({ type: "RESUME" });
-        }
-    }
-}
-
-function handleTransferComplete() {
-    if (rtc.dc) rtc.dc.send(JSON.stringify({ type: "done" }));
-    isTransferring = false;
-    updateStatus(sessionId, "completed");
-    document.getElementById("statusText").innerText = "Transfer complete!";
-}
-
-function updateUI() {
-    const sentSize = currentChunkIndex * 64 * 1024;
-    const progress = Math.min((sentSize / selectedFile.size) * 100, 100);
-    const stats = fileHandler.getStats(sentSize, selectedFile.size);
     
-    const progressEl = document.getElementById("progressBar");
-    const percentEl = document.getElementById("progressPercent");
-    const speedEl = document.getElementById("speed");
-    const sentEl = document.getElementById("sentSize");
-    const etaEl = document.getElementById("timeLeft");
+    p2p = new PeerConnection(sid, (signal) => socket.emit("signal", { sid, signal }));
+    
+    const offer = await p2p.createOffer();
+    socket.emit("signal", { sid, signal: { offer } });
+    
+    p2p.dc.onopen = () => {
+        console.log("Transfer channel open");
+        document.getElementById("transferInfo").style.display = "block";
+        document.getElementById("statusText").innerHTML = '<span class="pulse"></span>Streaming file...';
+        startTime = Date.now();
+        startStreaming();
+    };
+});
 
-    if (progressEl) progressEl.style.width = `${progress}%`;
-    if (percentEl) percentEl.innerText = `${Math.round(progress)}%`;
-    if (speedEl) speedEl.innerText = stats.speed;
-    if (sentEl) sentEl.innerText = formatSize(sentSize);
-    if (etaEl) etaEl.innerText = stats.eta;
+socket.on("signal", async (signal) => {
+    if (signal.answer) await p2p.handleAnswer(signal.answer);
+    if (signal.candidate) await p2p.addIce(signal.candidate);
+});
+
+function handleFile(files) {
+    file = files[0];
+    if (!file) return;
+    socket.emit("create_session");
 }
 
-async function copyToClipboard() {
-    const shareLink = document.getElementById("shareLink").innerText;
-    await navigator.clipboard.writeText(shareLink);
-    const btn = document.querySelector("button[onclick=\"copyToClipboard()\"]");
-    const oldText = btn.innerText;
-    btn.innerText = "Copied!";
-    setTimeout(() => btn.innerText = oldText, 2000);
+async function startStreaming() {
+    const CHUNK_SIZE = 64 * 1024; // 64KB
+    let offset = 0;
+    const reader = new FileReader();
+
+    const readNext = () => {
+        if (offset >= file.size) {
+            p2p.dc.send(JSON.stringify({ type: "DONE" }));
+            document.getElementById("statusText").innerText = "✓ Transfer Complete";
+            return;
+        }
+
+        const slice = file.slice(offset, offset + CHUNK_SIZE);
+        reader.readAsArrayBuffer(slice);
+    };
+
+    reader.onload = (e) => {
+        if (p2p.dc.bufferedAmount > 10 * 1024 * 1024) {
+            setTimeout(() => {
+                p2p.dc.send(e.target.result);
+                offset += e.target.result.byteLength;
+                updateUI(offset);
+                readNext();
+            }, 100);
+        } else {
+            p2p.dc.send(e.target.result);
+            offset += e.target.result.byteLength;
+            updateUI(offset);
+            readNext();
+        }
+    };
+
+    readNext();
 }
 
-function toggleQR() {
-    const qrContainer = document.getElementById("qrcode");
-    const shareLink = document.getElementById("shareLink").innerText;
-    qrContainer.classList.toggle("active");
-    if (qrContainer.classList.contains("active")) {
-        qrContainer.innerHTML = "";
-        new QRCode(qrContainer, { text: shareLink, width: 256, height: 256 });
+function updateUI(sent) {
+    const progress = Math.min((sent / file.size) * 100, 100);
+    document.getElementById("progressBar").style.width = `${progress}%`;
+    document.getElementById("progressPercent").innerText = `${Math.round(progress)}%`;
+
+    // Calculate ETA
+    const elapsed = (Date.now() - startTime) / 1000;
+    const speed = sent / elapsed; // bytes per second
+    const remaining = file.size - sent;
+    const eta = remaining / speed;
+
+    if (eta && isFinite(eta)) {
+      const minutes = Math.floor(eta / 60);
+      const seconds = Math.floor(eta % 60);
+      document.getElementById("etaText").innerText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
     }
 }

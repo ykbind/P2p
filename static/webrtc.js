@@ -1,95 +1,63 @@
-const CHUNK_SIZE = 64 * 1024; // 64KB
-const MAX_BUFFERED_AMOUNT = 8 * 1024 * 1024; // 8MB
+const P2P_CONFIG = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        // Reliable public TURN servers for NAT traversal on Render
+        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }
+    ],
+    iceCandidatePoolSize: 10
+};
 
-class WebRTCManager {
-    constructor(sessionId, onCandidate, onDataChannel, onData) {
-        this.sessionId = sessionId;
-        this.onCandidate = onCandidate;
-        this.onDataChannel = onDataChannel;
-        this.onData = onData; // Note: This is now only used for the DataChannel setup
-        
-        this.config = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' },
-                {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                }
-            ],
-            iceTransportPolicy: 'all',
-            iceCandidatePoolSize: 10
-        };
-        
-        this.pc = new RTCPeerConnection(this.config);
+class PeerConnection {
+    constructor(sid, sendSignal) {
+        this.sid = sid;
+        this.sendSignal = sendSignal;
+        this.pc = new RTCPeerConnection(P2P_CONFIG);
         this.dc = null;
+        this.pendingIce = [];
+        
+        this.pc.onicecandidate = (e) => {
+            if (e.candidate) this.sendSignal({ candidate: e.candidate });
+        };
+    }
 
-        this.pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.onCandidate(event.candidate);
+    async addIce(candidate) {
+        if (!this.pc.remoteDescription) {
+            this.pendingIce.push(candidate);
+            return;
+        }
+        try {
+            // Strong candidate validation to skip invalid/null indices
+            if (candidate && (candidate.sdpMid !== null || candidate.sdpMLineIndex !== null)) {
+                await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
             }
-        };
-
-        this.pc.ondatachannel = (event) => {
-            console.log("Remote DataChannel received");
-            this.dc = event.channel;
-            this.setupDataChannel();
-            if (this.onDataChannel) this.onDataChannel(this.dc);
-        };
+        } catch (err) { console.warn("ICE error", err); }
     }
 
-    createDataChannel(label) {
-        this.dc = this.pc.createDataChannel(label);
-        this.setupDataChannel();
-        return this.dc;
-    }
-
-    setupDataChannel() {
-        this.dc.binaryType = 'arraybuffer';
-        this.dc.onmessage = (event) => {
-            if (this.onData) this.onData(event.data);
-        };
+    async drainIce() {
+        while (this.pendingIce.length > 0) {
+            await this.addIce(this.pendingIce.shift());
+        }
     }
 
     async createOffer() {
+        this.dc = this.pc.createDataChannel("file-transfer", { ordered: true });
         const offer = await this.pc.createOffer();
         await this.pc.setLocalDescription(offer);
         return offer;
     }
 
-    async createAnswer(offer) {
+    async handleOffer(offer) {
         await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
+        await this.drainIce();
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);
         return answer;
     }
 
-    async setAnswer(answer) {
+    async handleAnswer(answer) {
         await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
-    }
-
-    async addCandidate(candidate) {
-        try {
-            if (!candidate) return;
-            // Ensure we are passing the candidate object correctly
-            const iceCandidate = (candidate.candidate !== undefined) ? candidate : { candidate: candidate };
-            await this.pc.addIceCandidate(new RTCIceCandidate(iceCandidate));
-        } catch (e) {
-            console.error('Error adding ice candidate', e);
-        }
+        await this.drainIce();
     }
 }

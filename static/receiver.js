@@ -1,85 +1,81 @@
-let sessionId = null;
-let rtc = null;
-const fileHandler = new FileHandler();
+const socket = io({ 
+    transports: ["polling", "websocket"], 
+    path: "/socket.io" 
+});
 
-function formatSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+let sid = window.location.pathname.split("/").pop();
+let p2p = null;
+let metadata = null;
+let chunks = [];
+let received = 0;
 
 socket.on("connect", () => {
-    console.log("Receiver connected.");
-    sessionId = window.location.pathname.split("/").pop();
-    if (sessionId) {
-        socket.emit("join_session", { sessionId });
-    }
+    socket.emit("join_session", sid);
 });
 
-socket.on("session_info", (data) => {
-    console.log("Session info received");
-    const statusText = document.getElementById("statusText");
-    const transferInfo = document.getElementById("transferInfo");
-    const totalSize = document.getElementById("totalSize");
+socket.on("signal", async (signal) => {
+    if (signal.metadata) {
+        metadata = signal.metadata;
+        document.getElementById("statusText").innerHTML = '<span class="pulse" style="background:var(--secondary)"></span>Secure Link Established';
+        document.getElementById("transferInfo").style.display = "block";
+        document.getElementById("fileName").innerText = metadata.name;
+        return;
+    }
 
-    if (statusText) statusText.innerText = "Connected to sender. Starting transfer...";
-    if (transferInfo) transferInfo.style.display = "block";
-    if (totalSize) totalSize.innerText = formatSize(data.metadata.size);
+    if (!p2p) {
+        console.log("Offer received, initializing PeerConnection.");
+        p2p = new PeerConnection(sid, (s) => socket.emit("signal", { sid, signal: s }));
+    }
     
-    rtc = new WebRTCManager(
-        sessionId,
-        (candidate) => sendSignal(sessionId, candidate),
-        (dc) => handleDataChannel(dc)
-    );
-});
-
-socket.on("signal", async (data) => {
-    if (data.offer) {
-        const answer = await rtc.createAnswer(data.offer);
-        sendSignal(sessionId, answer);
-    }
-    if (data.candidate) await rtc.addCandidate(data.candidate);
-});
-
-function handleDataChannel(dc) {
-    dc.onopen = () => console.log("Data channel open!");
-    dc.onmessage = (e) => {
-        if (typeof e.data === "string") {
-            try {
-                const msg = JSON.parse(e.data);
-                if (msg.type === "metadata") {
-                    fileHandler.init(msg.content.name, msg.content.size, msg.content.type);
-                    fileHandler.startTimer();
-                } else if (msg.type === "done") {
-                    fileHandler.save();
-                    document.getElementById("statusText").innerText = "Transfer complete!";
+    if (signal.offer) {
+        const answer = await p2p.handleOffer(signal.offer);
+        socket.emit("signal", { sid, signal: { answer } });
+        
+        p2p.pc.ondatachannel = (e) => {
+            p2p.dc = e.channel;
+            p2p.dc.binaryType = "arraybuffer";
+            p2p.dc.onopen = () => {
+                console.log("P2P Open");
+                document.getElementById("statusText").innerHTML = '<span class="pulse"></span>Downloading...';
+            };
+            p2p.dc.onmessage = (msg) => {
+                if (typeof msg.data === "string") {
+                    try {
+                        const signalPayload = JSON.parse(msg.data);
+                        if (signalPayload.type === "DONE") {
+                            finalize();
+                            return;
+                        }
+                    } catch (e) {}
                 }
-            } catch (err) {
-                console.error("Control message error:", err);
-            }
-        } else {
-            fileHandler.addChunk(e.data);
-            updateUI();
-        }
-    };
-}
+                
+                chunks.push(msg.data);
+                received += msg.data.byteLength;
+                updateUI();
+            };
+        };
+    }
+    if (signal.candidate) await p2p.addIce(signal.candidate);
+    if (signal.answer) await p2p.handleAnswer(signal.answer);
+});
 
 function updateUI() {
-    const received = fileHandler.receivedSize;
-    const progress = Math.min((received / fileHandler.totalSize) * 100, 100);
-    const stats = fileHandler.getStats(received, fileHandler.totalSize);
-    
-    const progressEl = document.getElementById("progressBar");
-    const percentEl = document.getElementById("progressPercent");
-    const speedEl = document.getElementById("speed");
-    const receivedEl = document.getElementById("receivedSize");
-    const etaEl = document.getElementById("timeLeft");
+    if (!metadata) return;
+    const progress = Math.min((received / metadata.size) * 100, 100);
+    document.getElementById("progressBar").style.width = `${progress}%`;
+    document.getElementById("progressPercent").innerText = `${Math.round(progress)}%`;
+}
 
-    if (progressEl) progressEl.style.width = `${progress}%`;
-    if (percentEl) percentEl.innerText = `${Math.round(progress)}%`;
-    if (speedEl) speedEl.innerText = stats.speed;
-    if (receivedEl) receivedEl.innerText = formatSize(received);
-    if (etaEl) etaEl.innerText = stats.eta;
+function finalize() {
+    if (!metadata) return;
+    const blob = new Blob(chunks, { type: metadata.type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = metadata.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    document.getElementById("statusText").innerText = "✓ Download Complete";
+    document.getElementById("progressLabel").innerText = "File saved successfully!";
 }

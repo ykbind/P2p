@@ -1,56 +1,82 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DropIt - Ultra Fast P2P Transfer</title>
     <link rel="stylesheet" href="/static/style.css">
-    <title>P2P - Sender</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Send File</h1>
-        <div id="dropZone" class="drop-zone">
-            <p>Drag & Drop your file here</p>
-            <p>or</p>
-            <div class="file-input-wrapper">
-                <label class="custom-btn" for="fileInput">Choose File</label>
-                <input type="file" id="fileInput" class="file-input" onchange="onFileSelected(this.files[0])">
+        <div class="card">
+            <h1>DropIt</h1>
+            <p class="subtitle">Secure, Browser-to-Browser File Transfer</p>
+            
+            <div id="dropZone" class="drop-zone" onclick="document.getElementById('fileInput').click()">
+                <span class="drop-icon">🚀</span>
+                <p id="dropText">Drop a file here or browse</p>
+                <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: 8px;">Direct P2P Encryption Enabled</p>
+                <input type="file" id="fileInput" hidden onchange="handleFile(this.files)">
             </div>
-        </div>
-        <p class="formal-note">Note: This application currently supports transferring only one file at a time per session.</p>
-        <p id="fileInfo"></p>
-        
-        <div id="sessionInfo" style="display: none;">
-            <p class="status-label">Share link with receiver:</p>
-            <div id="shareLink" class="session-url"></div>
-            <div class="session-actions">
-                <button class="custom-btn secondary" onclick="copyToClipboard()">Copy Link</button>
-                <button class="custom-btn secondary" onclick="toggleQR()">Toggle QR Code</button>
-            </div>
-            <div id="qrcode" class="qr-container"></div>
-        </div>
 
-        <div id="transferInfo" style="display: none;">
-            <div id="statusInfo">
-                <p id="statusText">Waiting for receiver...</p>
-                <div class="progress-bar-container">
-                    <div id="progressBar" class="progress-bar"></div>
+            <div id="sessionInfo" style="display: none;" class="mt-4">
+                <p class="text-center" style="font-size: 0.85rem; color: var(--text-dim);">Your link is ready</p>
+                <div class="share-box">
+                    <span id="shareLink"></span>
+                    <button onclick="copyToClipboard()" class="btn">Copy</button>
                 </div>
-                <div id="stats">
-                    <div>Progress: <span id="progressPercent">0%</span></div>
-                    <div>Speed: <span id="speed">0 KB/s</span></div>
-                    <div>Sent: <span id="sentSize">0 MB</span></div>
-                    <div>Total: <span id="totalSize">0 MB</span></div>
-                    <div>Time Left: <span id="timeLeft">Calculating...</span></div>
+                <div class="mt-4 text-center">
+                    <p id="statusText"><span class="pulse"></span>Waiting for connection...</p>
+                </div>
+            </div>
+
+            <div id="transferInfo" style="display: none;" class="mt-4">
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Progress</span>
+                        <span id="progressPercent" class="stat-value">0%</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">ETA</span>
+                        <span id="etaText" class="stat-value">Calculating...</span>
+                    </div>
+                </div>
+                <div class="progress-wrapper">
+                    <div class="progress-container">
+                        <div id="progressBar" class="progress-bar"></div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
-    <script src="/static/socket.js"></script>
     <script src="/static/webrtc.js"></script>
-    <script src="/static/fileHandler.js"></script>
     <script src="/static/sender.js"></script>
+    <script>
+        async function copyToClipboard() {
+            const link = document.getElementById('shareLink').innerText;
+            await navigator.clipboard.writeText(link);
+            const btn = document.querySelector('.btn');
+            btn.innerText = 'Copied!';
+            btn.style.background = 'var(--success)';
+            setTimeout(() => { 
+                btn.innerText = 'Copy'; 
+                btn.style.background = 'var(--primary)';
+            }, 2000);
+        }
+
+        const dz = document.getElementById('dropZone');
+        dz.ondragover = (e) => { e.preventDefault(); dz.style.borderColor = "var(--primary)"; };
+        dz.ondragleave = () => { dz.style.borderColor = "var(--border)"; };
+        dz.ondrop = (e) => {
+            e.preventDefault();
+            dz.style.borderColor = "var(--border)";
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files);
+        };
+    </script>
 </body>
 </html>
