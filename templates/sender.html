@@ -9,6 +9,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -27,8 +29,17 @@
                 <p class="text-center" style="font-size: 0.85rem; color: var(--text-dim);">Your link is ready</p>
                 <div class="share-box">
                     <span id="shareLink"></span>
-                    <button onclick="copyToClipboard()" class="btn">Copy</button>
+                    <div>
+                        <button onclick="copyToClipboard()" class="btn" style="padding: 8px 12px;">Copy</button>
+                        <button onclick="toggleQR()" class="btn" style="padding: 8px 12px; background: var(--secondary);">QR</button>
+                    </div>
                 </div>
+                
+                <!-- QR Code Container -->
+                <div id="qrContainer" style="display: none; background: white; padding: 16px; border-radius: 12px; margin: 16px auto; width: fit-content;">
+                    <div id="qrcode"></div>
+                </div>
+
                 <div class="mt-4 text-center">
                     <p id="statusText"><span class="pulse"></span>Waiting for connection...</p>
                 </div>
@@ -54,19 +65,49 @@
         </div>
     </div>
 
+    <div class="footer">
+        <a href="/tos">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/about">About Us</a>
+    </div>
+
     <script src="/static/webrtc.js"></script>
     <script src="/static/sender.js"></script>
     <script>
+        let qrVisible = false;
+        let qrInited = false;
+
         async function copyToClipboard() {
             const link = document.getElementById('shareLink').innerText;
             await navigator.clipboard.writeText(link);
             const btn = document.querySelector('.btn');
+            const originalText = btn.innerText;
             btn.innerText = 'Copied!';
             btn.style.background = 'var(--success)';
             setTimeout(() => { 
-                btn.innerText = 'Copy'; 
+                btn.innerText = originalText; 
                 btn.style.background = 'var(--primary)';
             }, 2000);
+        }
+
+        function toggleQR() {
+            const container = document.getElementById('qrContainer');
+            const link = document.getElementById('shareLink').innerText;
+            
+            if (!qrInited) {
+                new QRCode(document.getElementById("qrcode"), {
+                    text: link,
+                    width: 160,
+                    height: 160,
+                    colorDark : "#000000",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
+                });
+                qrInited = true;
+            }
+
+            qrVisible = !qrVisible;
+            container.style.display = qrVisible ? 'block' : 'none';
         }
 
         const dz = document.getElementById('dropZone');
