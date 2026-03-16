@@ -84,7 +84,10 @@ class WebRTCManager {
 
     async addCandidate(candidate) {
         try {
-            await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+            if (!candidate) return;
+            // Ensure we are passing the candidate object correctly
+            const iceCandidate = (candidate.candidate !== undefined) ? candidate : { candidate: candidate };
+            await this.pc.addIceCandidate(new RTCIceCandidate(iceCandidate));
         } catch (e) {
             console.error('Error adding ice candidate', e);
         }
