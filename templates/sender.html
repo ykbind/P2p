@@ -11,6 +11,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- StreamSaver for desktop receive-from-phone mode -->
+    <script src="https://cdn.jsdelivr.net/npm/web-streams-polyfill@2.0.2/dist/polyfill.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/streamsaver@2.0.3/StreamSaver.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -18,7 +21,19 @@
             <h1>DropIT</h1>
             <p class="subtitle">Secure, Browser-to-Browser File Transfer</p>
 
-            <!-- ── Drop / Browse zone ── -->
+            <!-- ── Mode switcher ── -->
+            <div class="mode-tabs">
+                <button class="mode-tab mode-tab--active" id="tab-send"
+                        onclick="switchMode('send')" aria-pressed="true">
+                    📤 Send a File
+                </button>
+                <button class="mode-tab" id="tab-receive"
+                        onclick="switchMode('receive')" aria-pressed="false">
+                    📱 Receive from Phone
+                </button>
+            </div>
+
+            <!-- ── SEND MODE: Drop / Browse zone ── -->
             <div id="dropZone" class="drop-zone" role="button" tabindex="0"
                  aria-label="Drop a file here or tap to browse"
                  onclick="document.getElementById('fileInput').click()"
@@ -29,30 +44,42 @@
                 <input type="file" id="fileInput" hidden onchange="handleFile(this.files)">
             </div>
 
-            <!-- ── Session / share link ── -->
+            <!-- ── RECEIVE MODE: instruction ── -->
+            <div id="receivePrompt" style="display:none;" class="receive-prompt">
+                <span class="drop-icon" aria-hidden="true">📲</span>
+                <p>Your desktop is ready to receive.</p>
+                <p class="drop-hint">A QR code will appear below — scan it with your phone.</p>
+                <button id="receiveBtn" class="btn btn--lg mt-2" onclick="startReceiveFromPhone()">
+                    Generate QR & Start
+                </button>
+            </div>
+
+            <!-- ── Shared: session info + QR ── -->
             <div id="sessionInfo" style="display: none;" class="mt-4">
-                <p class="text-center label-sm">Share this link with the receiver</p>
+                <p class="text-center label-sm">Share this link or scan the QR</p>
                 <div class="share-box">
                     <span id="shareLink"></span>
                     <div class="share-actions">
                         <button id="copyBtn" onclick="copyToClipboard()" class="btn" aria-label="Copy link">Copy</button>
-                        <button onclick="toggleQR()" class="btn btn--secondary" aria-label="Show QR code">QR</button>
+                        <button id="qrToggleBtn" onclick="toggleQR()" class="btn btn--secondary" aria-label="Toggle QR code">QR</button>
                     </div>
                 </div>
 
-                <!-- QR Code -->
                 <div id="qrContainer" style="display: none;" class="qr-container">
                     <div id="qrcode"></div>
                 </div>
 
-                <!-- Status line -->
                 <div class="mt-4 text-center">
-                    <p id="statusText"><span class="pulse pulse--wait"></span>Waiting for connection…</p>
+                    <p id="statusText"><span class="pulse pulse--wait"></span>Waiting…</p>
                 </div>
             </div>
 
-            <!-- ── Transfer progress ── -->
+            <!-- ── Transfer progress (shared by both modes) ── -->
             <div id="transferInfo" style="display: none;" class="mt-4">
+                <!-- Receive mode shows incoming filename -->
+                <p id="rcvFileName" style="display:none; text-align:center; font-size:0.82rem;
+                   color:var(--text-dim); word-break:break-all; margin-bottom:8px;"></p>
+
                 <div class="stats-grid stats-grid--4">
                     <div class="stat-item">
                         <span class="stat-label">Progress</span>
@@ -78,6 +105,12 @@
                 </div>
             </div>
 
+            <!-- ── Warning card ── -->
+            <div id="warningCard" class="warning-card mt-4" style="display: none;">
+                <span class="warning-icon">ℹ️</span>
+                <p class="warning-msg"></p>
+            </div>
+
             <!-- ── Error card ── -->
             <div id="errorCard" class="error-card mt-4" style="display: none;">
                 <span class="error-icon">⚠️</span>
@@ -97,60 +130,44 @@
     <script src="/static/webrtc.js"></script>
     <script src="/static/sender.js"></script>
     <script>
-        // --- QR Code toggle ---
-        let qrVisible = false;
-        let qrInited  = false;
+        // ── Mode switcher ──────────────────────────────────────────────────────
+        function switchMode(mode) {
+            const isSend = mode === 'send';
+            document.getElementById('tab-send').classList.toggle('mode-tab--active', isSend);
+            document.getElementById('tab-receive').classList.toggle('mode-tab--active', !isSend);
+            document.getElementById('tab-send').setAttribute('aria-pressed', isSend);
+            document.getElementById('tab-receive').setAttribute('aria-pressed', !isSend);
 
-        function copyToClipboard() {
-            const link = document.getElementById('shareLink').innerText;
-            navigator.clipboard.writeText(link).then(() => {
-                const btn = document.getElementById('copyBtn');
-                btn.innerText = 'Copied!';
-                btn.style.background = 'var(--success)';
-                setTimeout(() => {
-                    btn.innerText = 'Copy';
-                    btn.style.background = '';
-                }, 2000);
-            });
+            document.getElementById('dropZone').style.display     = isSend ? '' : 'none';
+            document.getElementById('receivePrompt').style.display = isSend ? 'none' : '';
         }
 
-        function toggleQR() {
-            const container = document.getElementById('qrContainer');
-            const link      = document.getElementById('shareLink').innerText;
-
-            if (!qrInited) {
-                new QRCode(document.getElementById("qrcode"), {
-                    text: link,
-                    width: 160,
-                    height: 160,
-                    colorDark:     "#000000",
-                    colorLight:    "#ffffff",
-                    correctLevel:  QRCode.CorrectLevel.H
-                });
-                qrInited = true;
-            }
-
-            qrVisible = !qrVisible;
-            container.style.display = qrVisible ? 'block' : 'none';
-        }
-
-        // Drag-and-drop support (desktop)
+        // ── Drag-and-drop (desktop send mode) ─────────────────────────────────
         const dz = document.getElementById('dropZone');
         dz.ondragover  = (e) => { e.preventDefault(); dz.classList.add('drop-zone--active'); };
         dz.ondragleave = ()  => { dz.classList.remove('drop-zone--active'); };
         dz.ondrop      = (e) => {
             e.preventDefault();
             dz.classList.remove('drop-zone--active');
-            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files);
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files);
+                // Update size stat
+                document.getElementById('fileSizeText').innerText = formatSize(e.dataTransfer.files[0].size);
+            }
         };
 
-        // Update file size stat when transfer info appears
-        const origHandleFile = handleFile;
+        // Patch handleFile to also update fileSizeText
+        const _origHandleFile = handleFile;
         window.handleFile = function(files) {
-            origHandleFile(files);
-            if (files && files[0]) {
-                document.getElementById('fileSizeText').innerText = formatSize(files[0].size);
-            }
+            _origHandleFile(files);
+            if (files && files[0]) document.getElementById('fileSizeText').innerText = formatSize(files[0].size);
+        };
+
+        // Show rcvFileName only in receive mode when transferInfo appears
+        const _origStartReceive = startReceiveFromPhone;
+        window.startReceiveFromPhone = function() {
+            _origStartReceive();
+            document.getElementById('rcvFileName').style.display = '';
         };
     </script>
 </body>

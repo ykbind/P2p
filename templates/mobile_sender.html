@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DropIt — Send to Desktop</title>
+    <meta name="description" content="Send a file from your phone directly to a desktop browser via DropIt's secure P2P transfer.">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>DropIT</h1>
+            <p class="subtitle">Send a file to the desktop</p>
+
+            <!-- ── File picker (touch-optimised, no drag needed on mobile) ── -->
+            <div id="pickZone" class="pick-zone">
+                <span class="drop-icon" aria-hidden="true">📂</span>
+                <p id="pickText">Tap to choose a file</p>
+                <p class="drop-hint">Transfers directly — nothing stored on servers</p>
+                <label class="btn btn--lg pick-label" for="fileInput" aria-label="Choose file">
+                    Choose File
+                </label>
+                <input type="file" id="fileInput" hidden onchange="handleFile(this.files)">
+            </div>
+
+            <!-- ── Status ── -->
+            <div class="mt-4 text-center">
+                <p id="statusText"><span class="pulse pulse--wait"></span>Connecting to desktop…</p>
+            </div>
+
+            <!-- ── Transfer progress ── -->
+            <div id="transferInfo" style="display: none;" class="mt-4">
+                <p id="sendFileName" style="text-align:center; font-size:0.82rem;
+                   color:var(--text-dim); word-break:break-all; margin-bottom:8px;"></p>
+
+                <div class="stats-grid stats-grid--4">
+                    <div class="stat-item">
+                        <span class="stat-label">Progress</span>
+                        <span id="progressPercent" class="stat-value">0%</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Speed</span>
+                        <span id="speedText" class="stat-value">—</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">ETA</span>
+                        <span id="etaText" class="stat-value">—</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Size</span>
+                        <span id="fileSizeText" class="stat-value">—</span>
+                    </div>
+                </div>
+
+                <div class="progress-wrapper">
+                    <div class="progress-container">
+                        <div id="progressBar" class="progress-bar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Error card ── -->
+            <div id="errorCard" class="error-card mt-4" style="display: none;">
+                <span class="error-icon">⚠️</span>
+                <p class="error-msg"></p>
+                <button class="btn btn--sm" onclick="location.reload()">Retry</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <a href="/tos">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/about">About Us</a>
+    </div>
+
+    <script>
+        // Injected by Flask template
+        window.__SESSION_ID__ = "{{ session_id }}";
+    </script>
+    <script src="/static/fileHandler.js"></script>
+    <script src="/static/webrtc.js"></script>
+    <script src="/static/mobile_sender.js"></script>
+</body>
+</html>

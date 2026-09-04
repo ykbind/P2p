@@ -59,6 +59,11 @@ def privacy():
         content="Your privacy is our priority. DropIt does not store your files. We only facilitate the peer-to-peer connection. Metadata is only used to establish the connection and is discarded immediately after."
     )
 
+@app.route("/send/<session_id>")
+def send_to_desktop(session_id):
+    """Mobile lands here to send a file to a waiting desktop receiver."""
+    return render_template("mobile_sender.html", session_id=session_id)
+
 @app.route("/about")
 def about():
     return redirect("https://ykblmao.xyz")
@@ -79,6 +84,28 @@ def on_create(data=None):
     join_room(sid)
     logger.info("[SIGNAL] Sender %s created session", sid)
     emit("session_created", sid)
+
+# ── Reverse-flow: desktop is receiver, mobile is sender ─────────────────────
+
+@socketio.on("create_receive_session")
+def on_create_receive(data=None):
+    """Desktop calls this to open a receive slot; mobile will join via /send/<sid>."""
+    sid = request.sid
+    join_room(sid)
+    logger.info("[SIGNAL] Desktop %s opened receive session", sid)
+    emit("receive_session_created", sid)
+
+@socketio.on("join_send_session")
+def on_join_send(data=None):
+    """Mobile calls this to join the desktop's receive room."""
+    target_sid = data
+    if not target_sid:
+        return
+    join_room(target_sid)
+    logger.info("[SIGNAL] Mobile %s joined desktop receiver %s", request.sid, target_sid)
+    emit("sender_joined", {"sender_id": request.sid}, to=target_sid)
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 @socketio.on("join_session")
 def on_join(data=None):
