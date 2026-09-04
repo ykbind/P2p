@@ -3,38 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DropIt - Join Transfer</title>
+    <title>DropIt — Receive File</title>
+    <meta name="description" content="Receive a file via DropIt's secure peer-to-peer transfer. No servers involved — file goes directly from sender to your browser.">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <!-- StreamSaver for supported browsers (service-worker-based disk write) -->
     <script src="https://cdn.jsdelivr.net/npm/web-streams-polyfill@2.0.2/dist/polyfill.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/streamsaver@2.0.3/StreamSaver.min.js"></script>
 </head>
 <body>
     <div class="container">
         <div class="card">
-            <h1>Join DropIt</h1>
-            <p id="statusText" class="subtitle">🔒 Secure Handshake in Progress...</p>
-            
+            <h1>DropIT</h1>
+            <p id="statusText" class="subtitle">🔒 Secure handshake in progress…</p>
+
+            <!-- ── Transfer progress ── -->
             <div id="transferInfo" style="display: none;" class="mt-4">
-                <div class="stats-grid">
+                <div class="stats-grid stats-grid--4">
                     <div class="stat-item">
                         <span class="stat-label">Progress</span>
                         <span id="progressPercent" class="stat-value">0%</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">File Name</span>
-                        <span id="fileName" class="stat-value">---</span>
+                        <span class="stat-label">Speed</span>
+                        <span id="speedText" class="stat-value">—</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">ETA</span>
+                        <span id="etaText" class="stat-value">—</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">File Size</span>
+                        <span id="fileSize" class="stat-value">—</span>
                     </div>
                 </div>
+
+                <div class="mt-2 text-center label-sm">
+                    <span id="fileName" style="color: var(--text-dim); word-break: break-all;"></span>
+                </div>
+
                 <div class="progress-wrapper">
-                    <p id="progressLabel" class="text-center" style="font-size: 0.8rem; margin-bottom: 8px;">Incoming Transfer</p>
                     <div class="progress-container">
                         <div id="progressBar" class="progress-bar"></div>
                     </div>
                 </div>
+            </div>
+
+            <!-- ── iOS / large-file warning ── -->
+            <div id="warningCard" class="warning-card mt-4" style="display: none;">
+                <span class="warning-icon">ℹ️</span>
+                <p class="warning-msg"></p>
+            </div>
+
+            <!-- ── Error card ── -->
+            <div id="errorCard" class="error-card mt-4" style="display: none;">
+                <span class="error-icon">⚠️</span>
+                <p class="error-msg"></p>
+                <button class="btn btn--sm" onclick="location.reload()">Retry</button>
             </div>
         </div>
     </div>
@@ -45,6 +73,11 @@
         <a href="/about">About Us</a>
     </div>
 
+    <script>
+        // Expose session_id from Flask template to JS
+        window.__SESSION_ID__ = "{{ session_id }}";
+    </script>
+    <script src="/static/fileHandler.js"></script>
     <script src="/static/webrtc.js"></script>
     <script src="/static/receiver.js"></script>
 </body>

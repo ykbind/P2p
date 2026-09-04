@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DropIt - Ultra Fast P2P Transfer</title>
+    <title>DropIt — Secure P2P File Transfer</title>
+    <meta name="description" content="Transfer files directly between browsers with end-to-end encryption. No uploads, no cloud storage, just instant P2P transfer.">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
-    <!-- QR Code Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -17,43 +17,58 @@
         <div class="card">
             <h1>DropIT</h1>
             <p class="subtitle">Secure, Browser-to-Browser File Transfer</p>
-            
-            <div id="dropZone" class="drop-zone" onclick="document.getElementById('fileInput').click()">
-                <span class="drop-icon">🚀</span>
-                <p id="dropText">Drop a file here or browse</p>
-                <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: 8px;">Direct P2P Encryption Enabled</p>
+
+            <!-- ── Drop / Browse zone ── -->
+            <div id="dropZone" class="drop-zone" role="button" tabindex="0"
+                 aria-label="Drop a file here or tap to browse"
+                 onclick="document.getElementById('fileInput').click()"
+                 onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('fileInput').click()">
+                <span class="drop-icon" aria-hidden="true">🚀</span>
+                <p id="dropText">Drop a file here or tap to browse</p>
+                <p class="drop-hint">Direct P2P &bull; End-to-End Encrypted</p>
                 <input type="file" id="fileInput" hidden onchange="handleFile(this.files)">
             </div>
 
+            <!-- ── Session / share link ── -->
             <div id="sessionInfo" style="display: none;" class="mt-4">
-                <p class="text-center" style="font-size: 0.85rem; color: var(--text-dim);">Your link is ready</p>
+                <p class="text-center label-sm">Share this link with the receiver</p>
                 <div class="share-box">
                     <span id="shareLink"></span>
                     <div class="share-actions">
-                        <button onclick="copyToClipboard()" class="btn" style="padding: 8px 12px;">Copy</button>
-                        <button onclick="toggleQR()" class="btn" style="padding: 8px 12px; background: var(--secondary);">QR</button>
+                        <button id="copyBtn" onclick="copyToClipboard()" class="btn" aria-label="Copy link">Copy</button>
+                        <button onclick="toggleQR()" class="btn btn--secondary" aria-label="Show QR code">QR</button>
                     </div>
                 </div>
-                
-                <!-- QR Code Container -->
-                <div id="qrContainer" style="display: none; background: white; padding: 16px; border-radius: 12px; margin: 16px auto; width: fit-content;">
+
+                <!-- QR Code -->
+                <div id="qrContainer" style="display: none;" class="qr-container">
                     <div id="qrcode"></div>
                 </div>
 
+                <!-- Status line -->
                 <div class="mt-4 text-center">
-                    <p id="statusText"><span class="pulse"></span>Waiting for connection...</p>
+                    <p id="statusText"><span class="pulse pulse--wait"></span>Waiting for connection…</p>
                 </div>
             </div>
 
+            <!-- ── Transfer progress ── -->
             <div id="transferInfo" style="display: none;" class="mt-4">
-                <div class="stats-grid">
+                <div class="stats-grid stats-grid--4">
                     <div class="stat-item">
                         <span class="stat-label">Progress</span>
                         <span id="progressPercent" class="stat-value">0%</span>
                     </div>
                     <div class="stat-item">
+                        <span class="stat-label">Speed</span>
+                        <span id="speedText" class="stat-value">—</span>
+                    </div>
+                    <div class="stat-item">
                         <span class="stat-label">ETA</span>
-                        <span id="etaText" class="stat-value">Calculating...</span>
+                        <span id="etaText" class="stat-value">—</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Size</span>
+                        <span id="fileSizeText" class="stat-value">—</span>
                     </div>
                 </div>
                 <div class="progress-wrapper">
@@ -61,6 +76,13 @@
                         <div id="progressBar" class="progress-bar"></div>
                     </div>
                 </div>
+            </div>
+
+            <!-- ── Error card ── -->
+            <div id="errorCard" class="error-card mt-4" style="display: none;">
+                <span class="error-icon">⚠️</span>
+                <p class="error-msg"></p>
+                <button class="btn btn--sm" onclick="location.reload()">Try Again</button>
             </div>
         </div>
     </div>
@@ -71,37 +93,39 @@
         <a href="/about">About Us</a>
     </div>
 
+    <script src="/static/fileHandler.js"></script>
     <script src="/static/webrtc.js"></script>
     <script src="/static/sender.js"></script>
     <script>
+        // --- QR Code toggle ---
         let qrVisible = false;
-        let qrInited = false;
+        let qrInited  = false;
 
-        async function copyToClipboard() {
+        function copyToClipboard() {
             const link = document.getElementById('shareLink').innerText;
-            await navigator.clipboard.writeText(link);
-            const btn = document.querySelector('.btn');
-            const originalText = btn.innerText;
-            btn.innerText = 'Copied!';
-            btn.style.background = 'var(--success)';
-            setTimeout(() => { 
-                btn.innerText = originalText; 
-                btn.style.background = 'var(--primary)';
-            }, 2000);
+            navigator.clipboard.writeText(link).then(() => {
+                const btn = document.getElementById('copyBtn');
+                btn.innerText = 'Copied!';
+                btn.style.background = 'var(--success)';
+                setTimeout(() => {
+                    btn.innerText = 'Copy';
+                    btn.style.background = '';
+                }, 2000);
+            });
         }
 
         function toggleQR() {
             const container = document.getElementById('qrContainer');
-            const link = document.getElementById('shareLink').innerText;
-            
+            const link      = document.getElementById('shareLink').innerText;
+
             if (!qrInited) {
                 new QRCode(document.getElementById("qrcode"), {
                     text: link,
                     width: 160,
                     height: 160,
-                    colorDark : "#000000",
-                    colorLight : "#ffffff",
-                    correctLevel : QRCode.CorrectLevel.H
+                    colorDark:     "#000000",
+                    colorLight:    "#ffffff",
+                    correctLevel:  QRCode.CorrectLevel.H
                 });
                 qrInited = true;
             }
@@ -110,13 +134,23 @@
             container.style.display = qrVisible ? 'block' : 'none';
         }
 
+        // Drag-and-drop support (desktop)
         const dz = document.getElementById('dropZone');
-        dz.ondragover = (e) => { e.preventDefault(); dz.style.borderColor = "var(--primary)"; };
-        dz.ondragleave = () => { dz.style.borderColor = "var(--border)"; };
-        dz.ondrop = (e) => {
+        dz.ondragover  = (e) => { e.preventDefault(); dz.classList.add('drop-zone--active'); };
+        dz.ondragleave = ()  => { dz.classList.remove('drop-zone--active'); };
+        dz.ondrop      = (e) => {
             e.preventDefault();
-            dz.style.borderColor = "var(--border)";
+            dz.classList.remove('drop-zone--active');
             if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files);
+        };
+
+        // Update file size stat when transfer info appears
+        const origHandleFile = handleFile;
+        window.handleFile = function(files) {
+            origHandleFile(files);
+            if (files && files[0]) {
+                document.getElementById('fileSizeText').innerText = formatSize(files[0].size);
+            }
         };
     </script>
 </body>

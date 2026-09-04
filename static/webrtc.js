@@ -2,23 +2,57 @@ const P2P_CONFIG = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        // Reliable public TURN servers for NAT traversal on Render
-        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }
+        // Public TURN servers for NAT traversal (fallback when STUN fails)
+        {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        }
     ],
     iceCandidatePoolSize: 10
 };
 
 class PeerConnection {
-    constructor(sid, sendSignal) {
+    constructor(sid, sendSignal, onError) {
         this.sid = sid;
         this.sendSignal = sendSignal;
+        this.onError = onError || function() {};
         this.pc = new RTCPeerConnection(P2P_CONFIG);
         this.dc = null;
         this.pendingIce = [];
-        
+
         this.pc.onicecandidate = (e) => {
             if (e.candidate) this.sendSignal({ candidate: e.candidate });
+        };
+
+        // Monitor ICE connection state for diagnostic/error reporting
+        this.pc.oniceconnectionstatechange = () => {
+            const state = this.pc.iceConnectionState;
+            console.log("[ICE]", state);
+            if (state === "failed") {
+                console.error("[ICE] Connection failed — attempting restart");
+                // Try ICE restart before giving up
+                this.pc.restartIce();
+                this.onError("ice_failed");
+            }
+            if (state === "disconnected") {
+                console.warn("[ICE] Peer disconnected");
+                this.onError("ice_disconnected");
+            }
+        };
+
+        this.pc.onconnectionstatechange = () => {
+            console.log("[RTC]", this.pc.connectionState);
         };
     }
 
@@ -28,11 +62,13 @@ class PeerConnection {
             return;
         }
         try {
-            // Strong candidate validation to skip invalid/null indices
+            // Validate candidate before adding — sdpMid OR sdpMLineIndex must be present
             if (candidate && (candidate.sdpMid !== null || candidate.sdpMLineIndex !== null)) {
                 await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
             }
-        } catch (err) { console.warn("ICE error", err); }
+        } catch (err) {
+            console.warn("[ICE] addIceCandidate error:", err);
+        }
     }
 
     async drainIce() {
@@ -43,6 +79,8 @@ class PeerConnection {
 
     async createOffer() {
         this.dc = this.pc.createDataChannel("file-transfer", { ordered: true });
+        // Set low-water mark so onbufferedamountlow fires at 512 KB
+        this.dc.bufferedAmountLowThreshold = 512 * 1024;
         const offer = await this.pc.createOffer();
         await this.pc.setLocalDescription(offer);
         return offer;
